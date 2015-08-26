@@ -4,17 +4,20 @@
 #require "Rocky.class.nut:1.2.2"
 
 //-------------------- Salesforce Constants --------------------//
-const CLIENT_ID = "<-- CONSUMER-KEY -->";
-const CLIENT_SECRET = "<-- CONSUMER-SECRET -->";
+const CLIENT_ID = "";
+const CLIENT_SECRET = "";
 const LOGIN_HOST = "login.salesforce.com";
 
 
 
-//---------- Extend Salesforce Class With Requests We Need ----------//
+//-------------------- Class Definitions --------------------//
+// Extend the Salesfoce class to perform operations we care about
 class ConnectedDevice extends Salesforce {
-
+    
+    // Grab the last part of the Agent's URL and use as an Id
     agentId = split(http.agenturl(), "/").pop();
 
+    // Write methods
     function openCase(subject, description, cb = null) {
         local data = {
             "Subject": subject,
@@ -33,22 +36,70 @@ class ConnectedDevice extends Salesforce {
         
         this.request("POST", "sobjects/Readings__c/DeviceId__c/" + agentId + "?_HttpMethod=PATCH", http.jsonencode(data), cb)
     }
+    
+    // OAuth 2.0 methods
+    function getOAuthToken(code, cb) {
+        // Send request with an authorization code
+        _oauthTokenRequest("authorization_code", code, cb);
+    }
+    
+    function refreshOAuthToken(refreshToken, cb) {
+        // Send request with refresh token
+        _oauthTokenRequest("refresh_token", refreshToken, cb);
+    }
+    
+    function _oauthTokenRequest(type, tokenCode, cb = null) {
+        // Build the request
+        local url = format("https://%s/services/oauth2/token", LOGIN_HOST);
+        local headers = { "Content-Type": "application/x-www-form-urlencoded" };
+        local data = {
+            "grant_type": type,
+            "client_id": _clientId,
+            "client_secret": _clientSecret,
+        };
+        
+        // Set the "code" or "refresh_token" parameters based on grant_type
+        if (type == "authorization_code") {
+            data.code <- tokenCode;
+            data.redirect_uri <- http.agenturl();
+        } else if (type == "refresh_token") {
+            data.refresh_token <- tokenCode;
+        } else {
+            throw "Unknown grant_type";
+        }
+        
+        local body = http.urlencode(data);
+        
+        http.post(url, headers, body).sendasync(function(resp) {
+            local respData = http.jsondecode(resp.body);
+            local err = null;
+            
+            // If there was an error, set the error code
+            if (resp.statuscode != 200) err = data.message;
+            
+            // Invoke the callback
+            if (cb) imp.wakeup(0, function() { cb(err, resp, respData); });
+        });
+    }
 }
 
 
 
-//-------------------- Instante Salesforce --------------------//
+//-------------------- Instantiate Salesforce Object --------------------//
+// Create the Salesforce object
 force <- ConnectedDevice(CLIENT_ID, CLIENT_SECRET);
 
 // Load existing credential data
 oAuth <- server.load();
 
-// If it exists, update the foce object
+// Load credentials if we have them
 if ("instance_url" in oAuth && "access_token" in oAuth) {
+    // Set the credentials in the Salesforce object
     force.setInstanceUrl(oAuth.instance_url);
     force.setToken(oAuth.access_token);
-    
-    server.log("Loaded existing OAuth credentials.");
+        
+    // Log a message
+    server.log("Loaded OAuth Credentials!");
 }
 
 
@@ -119,28 +170,13 @@ app.get("/", function(context) {
         return;
     }
 
-    // If it was, build a request to get the token
-    local url = format("https://%s/services/oauth2/token", LOGIN_HOST);
-    local headers = { "Content-Type": "application/x-www-form-urlencoded" };
-    local body = http.urlencode({
-        "code": context.req.query["code"],
-        "grant_type": "authorization_code",
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "redirect_uri": http.agenturl()
-    });
-
-    // Send the request
-    http.post(url, headers, body).sendasync(function(resp) {
-        // Decode the body of the response
-        local respData = http.jsondecode(resp.body);
-        
-        // If the request failed
-        if (resp.statuscode != 200) {
-            context.send(400, "Error authenticating (" + respData.error_description + ").");
-            return;            
+    // Exchange the auth code for an OAuth token
+    force.getOAuthToken(context.req.query["code"], function(err, resp, respData) {
+        if (err) {
+            context.send(400, "Error authenticating (" + err + ").");
+            return;
         }
-
+        
         // If it was successful, save the data and and update salesforce
         server.save(respData);
 
