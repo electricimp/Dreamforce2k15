@@ -21,7 +21,7 @@ imu.setDatarate_A(10);
 function poll() {
     // Schedule next reading
     imp.wakeup(15, poll);
-    
+
     // Read the accelerometer
     local accelData = imu.getAccel();
     // Send the data to the agent
@@ -45,7 +45,7 @@ xm_int1 <- hardware.pin2;
 xm_int1.configure(DIGITAL_IN, function() {
     // Ignore falling edges (otherwise we would get 2 events per impact)
     if (!xm_int1.read()) return;
-    
+
     // Read the current acceleration
     local accel = imu.getAccel();
     // Send the data to the agent
@@ -54,4 +54,3 @@ xm_int1.configure(DIGITAL_IN, function() {
     // Clear the internal interrupt flag by reading the Int1Src register
     imu.getInt1Src_XM();
 });
-

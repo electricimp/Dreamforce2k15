@@ -8,7 +8,7 @@ function get3DMagnitude(reading) {
 device.on("accel", function(reading) {
     // Calculate the total force
     local totalForce = get3DMagnitude(reading);
-    
+
     // Log a message
     server.log("Got a reading: " + totalForce + "G (X: " + reading.x + ", Y: " + reading.y + ", " + reading.z + ")");
 });
@@ -17,8 +17,7 @@ device.on("accel", function(reading) {
 device.on("impact", function(data) {
     // Calculate the total force
     local totalForce = get3DMagnitude(data);
-    
+
     // Log a message
     server.log("Impact Event (" + totalForce + "G)");
 });
-
